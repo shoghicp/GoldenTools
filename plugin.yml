@@ -1,0 +1,6 @@
+name: GoldenTools
+version: 1.0.0
+description: "Enhance your mining, digging, chopping, combat and farming abilities using gold tools"
+api: 1.12.0
+main: shoghicp\GoldenTools\Main
+author: shoghicp
