@@ -22,6 +22,12 @@ use pocketmine\event\block\BlockBreakEvent;
 use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerInteractEvent;
 use pocketmine\event\player\PlayerQuitEvent;
+use pocketmine\level\particle\DestroyBlockParticle;
+use pocketmine\level\particle\DustParticle;
+use pocketmine\level\particle\EnchantParticle;
+use pocketmine\level\particle\FlameParticle;
+use pocketmine\level\particle\SmokeParticle;
+use pocketmine\level\sound\FizzSound;
 use pocketmine\math\Vector3;
 use pocketmine\Player;
 use pocketmine\plugin\PluginBase;
@@ -32,6 +38,13 @@ class Main extends PluginBase implements Listener{
 
 	public function onEnable(){
 		$this->getServer()->getPluginManager()->registerEvents($this, $this);
+		if(Item::getCreativeItemIndex(Item::get(Item::GOLDEN_PICKAXE)) === -1){
+			Item::addCreativeItem(Item::get(Item::GOLDEN_PICKAXE));
+		}
+	}
+
+	public function onDisable(){
+		Item::removeCreativeItem(Item::get(Item::GOLDEN_PICKAXE));
 	}
 
 	private function getLastAction(Player $player){
@@ -40,11 +53,72 @@ class Main extends PluginBase implements Listener{
 
 	/**
 	 * @param PlayerInteractEvent $event
-	 * @priority LOWEST
+	 * @priority HIGHEST
 	 * @ignoreCancelled false
 	 */
 	public function onInteract(PlayerInteractEvent $event){
 		$this->lastInteract[$event->getPlayer()->getId()] = [$event->getAction(), $event->getFace()];
+
+		if(!$event->isCancelled() and $event->getAction() === PlayerInteractEvent::RIGHT_CLICK_BLOCK){
+			$item = clone $event->getItem();
+			$block = $event->getBlock();
+			if($item->isPickaxe() and $item->getId() === Item::GOLD_PICKAXE){
+				$blockItem = Item::get($block->getId(), $block->getDamage());
+				$result = $this->getServer()->getCraftingManager()->matchFurnaceRecipe($blockItem);
+
+				if($result === null){ //Search for results
+					foreach($this->getServer()->getCraftingManager()->getFurnaceRecipes() as $recipe){
+						if($recipe->getResult()->equals($blockItem)){
+							$result = $recipe;
+							break;
+						}
+					}
+				}
+
+				if($this->isFortuneBlock($block->getId())){
+					$fakeItem = Item::get(Item::DIAMOND_PICKAXE);
+					$drops = $block->getDrops($fakeItem);
+					if($block->getLevel()->useBreakOn($block, $fakeItem, null)){
+						foreach($drops as $d){
+							if(mt_rand(0, 100) < 90){
+								$block->getLevel()->dropItem($block->add(0.5, 0.5, 0.5), Item::get($d[0], $d[1], $d[2]));
+							}else{
+								$block->getLevel()->dropItem($block->add(0.5, 0.5, 0.5), Item::get($d[0], $d[1], $d[2] * 2));
+							}
+						}
+					}
+
+					$item->useOn($block);
+					if($item->getDamage() >= $item->getMaxDurability()){
+						$item = Item::get(Item::AIR, 0, 0);
+					}
+
+					$event->getPlayer()->getInventory()->setItemInHand($item);
+				}elseif($this->isPickaxeBlock($block->getId()) or $result !== null){
+					if($result !== null){
+						$block->getLevel()->setBlock($block, Block::get(0));
+						$block->getLevel()->addParticle(new DestroyBlockParticle($block->add(0.5, 0.5, 0.5), $block));
+						for($i = 0; $i < 27; ++$i){ //Flame particles distributed inside the block, and offset them randomly
+							$xOff = ($i % 3 - 1) / 3 + mt_rand(-1, 1) / 5;
+							$yOff = (floor($i / 3) % 3 - 1) / 3 + mt_rand(-1, 1) / 5;
+							$zOff = (floor($i / 9) - 1) / 3 + mt_rand(-1, 1) / 5;
+							$block->getLevel()->addParticle(new FlameParticle($block->add(0.5 + $xOff, 0.5 + $yOff, 0.5 + $zOff), $block));
+						}
+						$block->getLevel()->addSound(new FizzSound($block->add(0.5, 0.5, 0.5)));
+						$block->getLevel()->dropItem($block->add(0.5, 0.5, 0.5), $result->getResult());
+					}else{
+						$block->getLevel()->useBreakOn($block, $item, null);
+					}
+
+					$item->useOn($block);
+					if($item->getDamage() >= $item->getMaxDurability()){
+						$item = Item::get(Item::AIR, 0, 0);
+					}
+
+					$event->getPlayer()->getInventory()->setItemInHand($item);
+				}
+			}
+		}
 	}
 
 	public function onPlayerQuit(PlayerQuitEvent $event){
@@ -89,8 +163,39 @@ class Main extends PluginBase implements Listener{
 
 					new Vector3($pos->x + 1, $pos->y, $pos->z - 1),
 					new Vector3($pos->x, $pos->y, $pos->z - 1),
-					new Vector3($pos->x - 1, $pos->y, $pos->z - 1),
+					new Vector3($pos->x - 1, $pos->y, $pos->z - 1)
 				];
+
+			case Vector3::SIDE_EAST:
+			case Vector3::SIDE_WEST:
+				return [
+					new Vector3($pos->x, $pos->y + 1, $pos->z + 1),
+					new Vector3($pos->x, $pos->y, $pos->z + 1),
+					new Vector3($pos->x, $pos->y - 1, $pos->z + 1),
+
+					new Vector3($pos->x, $pos->y + 1, $pos->z),
+					new Vector3($pos->x, $pos->y - 1, $pos->z),
+
+					new Vector3($pos->x, $pos->y + 1, $pos->z - 1),
+					new Vector3($pos->x, $pos->y, $pos->z - 1),
+					new Vector3($pos->x, $pos->y - 1, $pos->z - 1)
+				];
+
+			case Vector3::SIDE_SOUTH:
+			case Vector3::SIDE_NORTH:
+				return [
+					new Vector3($pos->x + 1, $pos->y + 1, $pos->z),
+					new Vector3($pos->x + 1, $pos->y, $pos->z),
+					new Vector3($pos->x + 1, $pos->y - 1, $pos->z),
+
+					new Vector3($pos->x, $pos->y + 1, $pos->z),
+					new Vector3($pos->x, $pos->y - 1, $pos->z),
+
+					new Vector3($pos->x - 1, $pos->y + 1, $pos->z),
+					new Vector3($pos->x - 1, $pos->y, $pos->z),
+					new Vector3($pos->x - 1, $pos->y - 1, $pos->z)
+				];
+
 
 			default:
 				return [];
@@ -140,5 +245,14 @@ class Main extends PluginBase implements Listener{
 		$blockId === Block::QUARTZ_BLOCK or
 		$blockId === Block::STAINED_HARDENED_CLAY or
 		$blockId === Block::HARDENED_CLAY;
+	}
+
+	private function isFortuneBlock($blockId){
+		return $blockId === Block::COAL_ORE or
+		$blockId === Block::LAPIS_ORE or
+		$blockId === Block::DIAMOND_ORE or
+		$blockId === Block::REDSTONE_ORE or
+		$blockId === Block::LIT_REDSTONE_ORE or
+		$blockId === Block::EMERALD_ORE;
 	}
 }
