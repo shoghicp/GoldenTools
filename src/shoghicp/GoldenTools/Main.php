@@ -17,6 +17,9 @@
 namespace shoghicp\GoldenTools;
 
 use pocketmine\block\Block;
+use pocketmine\block\Crops;
+use pocketmine\block\Sapling;
+use pocketmine\event\player\PlayerItemHeldEvent;
 use pocketmine\item\Item;
 use pocketmine\event\block\BlockBreakEvent;
 use pocketmine\event\Listener;
@@ -31,6 +34,7 @@ use pocketmine\level\sound\FizzSound;
 use pocketmine\math\Vector3;
 use pocketmine\Player;
 use pocketmine\plugin\PluginBase;
+use pocketmine\utils\TextFormat;
 
 class Main extends PluginBase implements Listener{
 
@@ -88,12 +92,14 @@ class Main extends PluginBase implements Listener{
 						}
 					}
 
-					$item->useOn($block);
-					if($item->getDamage() >= $item->getMaxDurability()){
-						$item = Item::get(Item::AIR, 0, 0);
-					}
+					if(mt_rand(0, 100) < 25){
+						$item->useOn($block);
+						if($item->getDamage() >= $item->getMaxDurability()){
+							$item = Item::get(Item::AIR, 0, 0);
+						}
 
-					$event->getPlayer()->getInventory()->setItemInHand($item);
+						$event->getPlayer()->getInventory()->setItemInHand($item);
+					}
 				}elseif($this->isPickaxeBlock($block->getId()) or $result !== null){
 					if($result !== null){
 						$block->getLevel()->setBlock($block, Block::get(0));
@@ -110,14 +116,55 @@ class Main extends PluginBase implements Listener{
 						$block->getLevel()->useBreakOn($block, $item, null);
 					}
 
-					$item->useOn($block);
-					if($item->getDamage() >= $item->getMaxDurability()){
-						$item = Item::get(Item::AIR, 0, 0);
+					if(mt_rand(0, 100) < 25){
+						$item->useOn($block);
+						if($item->getDamage() >= $item->getMaxDurability()){
+							$item = Item::get(Item::AIR, 0, 0);
+						}
+
+						$event->getPlayer()->getInventory()->setItemInHand($item);
+					}
+				}
+			}elseif($item->isHoe() and $item->getId() === Item::GOLD_HOE){
+				$block = $event->getBlock();
+				if($block instanceof Crops or $block instanceof Sapling){
+					$block->onActivate(Item::get(Item::DYE, 15), $event->getPlayer());
+
+					for($i = 0; $i < 27; ++$i){ //Green particles distributed inside the block, and offset them randomly
+						$xOff = ($i % 3 - 1) / 3 + mt_rand(-1, 1) / 5;
+						$yOff = (floor($i / 3) % 3 - 1) / 3 + mt_rand(-1, 1) / 5;
+						$zOff = (floor($i / 9) - 1) / 3 + mt_rand(-1, 1) / 5;
+						$block->getLevel()->addParticle(new DustParticle($block->add(0.5 + $xOff, 0.5 + $yOff, 0.5 + $zOff), 0, mt_rand(150, 200), 0));
 					}
 
-					$event->getPlayer()->getInventory()->setItemInHand($item);
+					if(mt_rand(0, 100) < 15){
+						$item->useOn(Block::get(Block::GRASS)); //HACK
+						if($item->getDamage() >= $item->getMaxDurability()){
+							$item = Item::get(Item::AIR, 0, 0);
+						}
+
+						$event->getPlayer()->getInventory()->setItemInHand($item);
+					}
+				}elseif($block->getId() === Block::GRASS or $block->getId() === Block::DIRT or $block->getId() === Block::MYCELIUM){
+					for($i = 0; $i < 9; ++$i){
+						if($i === 4){
+							continue;
+						}
+						$target = $block->getLevel()->getBlock($block->add($i % 3 - 1, 0, floor($i / 3) - 1));
+						if($block->getId() === Block::GRASS or $block->getId() === Block::DIRT or $block->getId() === Block::MYCELIUM){
+							$block->getLevel()->setBlock($target, Block::get(Block::FARMLAND));
+						}
+					}
 				}
 			}
+		}
+	}
+
+	public function onItemChange(PlayerItemHeldEvent $event){
+		if($event->getItem()->getId() === Item::GOLDEN_PICKAXE){
+			$event->getPlayer()->sendPopup(TextFormat::RED . "Fire Pickaxe");
+		}elseif($event->getItem()->getId() === Item::GOLDEN_HOE){
+			$event->getPlayer()->sendPopup(TextFormat::GREEN . "Growth Hoe");
 		}
 	}
 
@@ -144,6 +191,12 @@ class Main extends PluginBase implements Listener{
 				$action = $this->getLastAction($player);
 				if($action !== null and $action[0] === PlayerInteractEvent::LEFT_CLICK_BLOCK){
 					$this->faceAreaBreak($player, $item, $block, $action[1]);
+				}
+			}
+		}elseif($item->isHoe() and $item->getId() === Item::GOLD_HOE){
+			if($block instanceof Crops){
+				foreach($block->getDrops($item) as $d){
+					$block->getLevel()->dropItem($block->add(0.5, 0.5, 0.5), Item::get($d[0], $d[1], $d[2]));
 				}
 			}
 		}
